@@ -6,17 +6,16 @@ use reth_evm::{ConfigureEvm, ConfigureEvmEnv};
 use reth_exex::ExExContext;
 use reth_node_api::FullNodeComponents;
 use reth_primitives::{
-    keccak256, Address, Header, Receipt, SealedBlockWithSenders, StorageKey, TransactionSigned,
-    B256,
+    Address, Header, Receipt, SealedBlockWithSenders, StorageKey, TransactionSigned, B256,
 };
 use reth_provider::{EvmEnvProvider, StateProvider, StateProviderFactory};
 use reth_revm::{database::StateProviderDatabase, primitives::state::EvmState};
-use reth_trie::StorageWitness;
+use reth_trie::StorageMultiProof;
 use revm::{
-    db::CacheDB,
+    db::{CacheDB, ExecutionTrace},
     primitives::{
         env::{BlockEnv, CfgEnvWithHandlerCfg, Env},
-        EnvWithHandlerCfg, ResultAndState, TxEnv,
+        EnvWithHandlerCfg, ResultAndState, TxEnv, U256,
     },
     DatabaseCommit,
 };
@@ -30,14 +29,8 @@ pub(crate) fn trace_block<Node: FullNodeComponents>(
     ctx: &mut ExExContext<Node>,
     block: SealedBlockWithSenders,
     receipts: Vec<Option<Receipt>>,
+    trace: ExecutionTrace,
 ) -> Result<BlockTrace> {
-    let beneficiary = block.beneficiary;
-    let withdrawals: Vec<_> = block
-        .block
-        .withdrawals
-        .clone()
-        .map(|w| w.iter().map(|w| w.address).collect())
-        .unwrap_or_default();
     let (cfg, block_env) = configure_evm(ctx, &block.header)?;
     let mut db = configure_db(ctx, &block);
 
@@ -45,15 +38,6 @@ pub(crate) fn trace_block<Node: FullNodeComponents>(
         .into_transactions_ecrecovered()
         .zip(receipts.into_iter())
         .peekable();
-
-    // instantiate state access
-    let mut state_access: HashMap<Address, HashSet<StorageKey>> = HashMap::new();
-
-    // populate beneficiary and withdrawals
-    state_access.insert(beneficiary, HashSet::new());
-    for address in withdrawals {
-        state_access.insert(address, HashSet::new());
-    }
 
     let mut code_db = HashMap::new();
     let mut txn_infos = vec![];
@@ -71,7 +55,6 @@ pub(crate) fn trace_block<Node: FullNodeComponents>(
             &state,
             &mut code_db,
             &mut cum_gas,
-            &mut state_access,
         ));
 
         std::mem::drop(evm);
@@ -81,7 +64,7 @@ pub(crate) fn trace_block<Node: FullNodeComponents>(
         }
     }
 
-    let trie_pre_images = state_witness(db.db.0, state_access)?;
+    let trie_pre_images = state_witness(db.db.0, trace.accounts)?;
 
     Ok(BlockTrace {
         trie_pre_images,
@@ -132,7 +115,6 @@ fn trace_transaction(
     state: &EvmState,
     code_db: &mut HashMap<primitive_types::H256, Vec<u8>>,
     cum_gas: &mut u64,
-    state_access: &mut HashMap<Address, HashSet<StorageKey>>,
 ) -> TxnInfo {
     let meta = TxnMeta {
         byte_code: tx.envelope_encoded().to_vec(),
@@ -151,7 +133,6 @@ fn trace_transaction(
     let traces = state
         .into_iter()
         .map(|(address, state)| {
-            let account_state = state_access.entry(*address).or_default();
             let mut storage_read = vec![];
             let mut storage_written: HashMap<primitive_types::H256, _> = HashMap::new();
 
@@ -162,11 +143,9 @@ fn trace_transaction(
                             Into::<B256>::into(key).compat(),
                             value.present_value.compat(),
                         );
-                        account_state.insert(key.into());
                     }
                     false => {
                         storage_read.push(Into::<B256>::into(key).compat());
-                        account_state.insert(key.into());
                     }
                 }
             }
@@ -192,7 +171,6 @@ fn trace_transaction(
                 storage_read: Some(storage_read).filter(|x| !x.is_empty()),
                 storage_written: Some(storage_written).filter(|x| !x.is_empty()),
                 code_usage,
-                self_destructed: Some(state.is_selfdestructed()).filter(|x| *x),
             };
 
             ((*address).compat(), trace)
@@ -204,39 +182,39 @@ fn trace_transaction(
 
 fn state_witness(
     state: Box<dyn StateProvider>,
-    state_access: HashMap<Address, HashSet<StorageKey>>,
+    state_access: HashMap<Address, HashSet<U256>>,
 ) -> Result<BlockTraceTriePreImages> {
     // fetch the state witness
-    let state_access: Vec<(Address, Vec<StorageKey>)> = state_access
+    let state_access: HashMap<Address, Vec<StorageKey>> = state_access
         .into_iter()
-        .map(|(k, v)| (k, v.into_iter().collect()))
+        .map(|(k, v)| (k, v.into_iter().map(Into::into).collect()))
         .collect();
-    let state_witness = state.witness(&Default::default(), state_access)?;
+    let state_witness = state.multiproof(Default::default(), state_access)?;
 
     // build the account trie witness
     let mut state_trie_builder =
-        PartialTrieBuilder::new(state_witness.state_root.compat(), Default::default());
-    state_trie_builder.insert_proof(state_witness.accounts_witness.compat());
+        PartialTrieBuilder::new(state_witness.root.compat(), Default::default());
+    state_trie_builder.insert_proof(
+        state_witness
+            .account_subtree
+            .into_values()
+            .map(Into::into)
+            .collect(),
+    );
 
     // build the storage trie witnesses
     let storage_witnesses = state_witness
-        .storage_witnesses
+        .storages
         .into_iter()
-        .map(
-            |StorageWitness {
-                 address,
-                 storage_root,
-                 storage_witness,
-             }| {
-                let mut storage_trie_builder =
-                    PartialTrieBuilder::new(storage_root.compat(), Default::default());
-                storage_trie_builder.insert_proof(storage_witness.compat());
-                (
-                    keccak256(address).compat(),
-                    SeparateTriePreImage::Direct(storage_trie_builder.build()),
-                )
-            },
-        )
+        .map(|(hashed_addr, StorageMultiProof { root, subtree })| {
+            let mut storage_trie_builder =
+                PartialTrieBuilder::new(root.compat(), Default::default());
+            storage_trie_builder.insert_proof(subtree.into_values().map(Into::into).collect());
+            (
+                hashed_addr.compat(),
+                SeparateTriePreImage::Direct(storage_trie_builder.build()),
+            )
+        })
         .collect();
 
     Ok(BlockTraceTriePreImages::Separate(SeparateTriePreImages {

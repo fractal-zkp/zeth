@@ -11,13 +11,15 @@ pub enum ZeroApiError {
 #[derive(Debug, thiserror::Error)]
 pub enum DatabaseError {
     #[error("Failed to commit zero trace to database: {0}")]
-    FailedToInsertTrace(rusqlite::Error),
+    FailedToInsertTrace(sqlx::Error),
     #[error("Failed to delete trace from database: {0}")]
-    FailedToDeleteTrace(rusqlite::Error),
+    FailedToDeleteTrace(sqlx::Error),
     #[error("Failed to get trace from database: {0}")]
-    FailedToGetTrace(rusqlite::Error),
+    FailedToGetTrace(sqlx::Error),
     #[error("Failed to create tables in database: {0}")]
-    FailedToCreateTables(rusqlite::Error),
+    FailedToCreateTables(sqlx::Error),
+    #[error("Failed to open database connection: {0}")]
+    FailedToOpenConnection(sqlx::Error),
 }
 
 impl From<ZeroApiError> for jsonrpsee::types::error::ErrorObject<'static> {
