@@ -12,18 +12,18 @@ path = "src/main.rs"
 async-trait = "0.1.81"
 alloy-rlp = "0.3.4"
 jsonrpsee = "0.24"
-reth = { git = "https://github.com/fractal-zkp/reth.git", branch = "feat/tx-traces" }
-reth-evm = { git = "https://github.com/fractal-zkp/reth.git", branch = "feat/tx-traces"  }
-reth-revm = { git = "https://github.com/fractal-zkp/reth.git", branch = "feat/tx-traces"  }
-reth-exex = { git = "https://github.com/fractal-zkp/reth.git", branch = "feat/tx-traces"  }
-reth-node-api = { git = "https://github.com/fractal-zkp/reth.git", branch = "feat/tx-traces"  }
-reth-node-core = { git = "https://github.com/fractal-zkp/reth.git", branch = "feat/tx-traces"  }
-reth-node-ethereum = { git = "https://github.com/fractal-zkp/reth.git", branch = "feat/tx-traces"  }
-reth-primitives = { git = "https://github.com/fractal-zkp/reth.git", branch = "feat/tx-traces"  }
-reth-provider = { git = "https://github.com/fractal-zkp/reth.git", branch = "feat/tx-traces"  }
-reth-rpc = { git = "https://github.com/fractal-zkp/reth.git", branch = "feat/tx-traces"  }
-reth-tracing = { git = "https://github.com/fractal-zkp/reth.git", branch = "feat/tx-traces"  }
-reth-trie = { git = "https://github.com/fractal-zkp/reth.git", branch = "feat/tx-traces"  }
+reth = { git = "https://github.com/fractal-zkp/reth.git", branch = "zeth" }
+reth-evm = { git = "https://github.com/fractal-zkp/reth.git", branch = "zeth"  }
+reth-revm = { git = "https://github.com/fractal-zkp/reth.git", branch = "zeth"  }
+reth-exex = { git = "https://github.com/fractal-zkp/reth.git", branch = "zeth"  }
+reth-node-api = { git = "https://github.com/fractal-zkp/reth.git", branch = "zeth"  }
+reth-node-core = { git = "https://github.com/fractal-zkp/reth.git", branch = "zeth"  }
+reth-node-ethereum = { git = "https://github.com/fractal-zkp/reth.git", branch = "zeth"  }
+reth-primitives = { git = "https://github.com/fractal-zkp/reth.git", branch = "zeth"  }
+reth-provider = { git = "https://github.com/fractal-zkp/reth.git", branch = "zeth"  }
+reth-rpc = { git = "https://github.com/fractal-zkp/reth.git", branch = "zeth"  }
+reth-tracing = { git = "https://github.com/fractal-zkp/reth.git", branch = "zeth"  }
+reth-trie = { git = "https://github.com/fractal-zkp/reth.git", branch = "zeth"  }
 
 revm = { git = "https://github.com/fractal-zkp/revm.git", branch = "zeth", features = [
     "std",
