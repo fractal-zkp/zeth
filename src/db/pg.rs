@@ -18,7 +18,7 @@ impl Postgres {
             .max_connections(1)
             .connect(path)
             .await
-            .map_err(DatabaseError::FailedToOpenConnection)?;
+            .map_err(DatabaseError::OpenConnection)?;
         let database = Self { pool };
         database.create_tables().await?;
         Ok(database)
@@ -34,7 +34,7 @@ impl Postgres {
         )
         .execute(&self.pool)
         .await
-        .map_err(DatabaseError::FailedToCreateTables)?;
+        .map_err(DatabaseError::CreateTables)?;
         Ok(())
     }
 }
@@ -55,7 +55,7 @@ impl Database for Postgres {
         .bind(serde_json::to_string(&block_trace).expect("block trace is serializable"))
         .execute(&self.pool)
         .await
-        .map_err(DatabaseError::FailedToInsertTrace)?;
+        .map_err(DatabaseError::InsertTrace)?;
         Ok(())
     }
 
@@ -68,7 +68,7 @@ impl Database for Postgres {
             .bind(block_hash.to_string())
             .fetch_optional(&self.pool)
             .await
-            .map_err(DatabaseError::FailedToGetTrace)?;
+            .map_err(DatabaseError::GetTrace)?;
 
         if let Some(row) = row {
             let block_trace: String = row.try_get("block_trace").expect("column is well formed");
@@ -89,7 +89,7 @@ impl Database for Postgres {
             .bind(block_number as i64)
             .fetch_optional(&self.pool)
             .await
-            .map_err(DatabaseError::FailedToGetTrace)?;
+            .map_err(DatabaseError::GetTrace)?;
 
         if let Some(row) = row {
             let block_trace: String = row.try_get("block_trace").expect("column is well formed");
@@ -109,7 +109,7 @@ impl Database for Postgres {
             .bind(block_hash.to_string())
             .execute(&self.pool)
             .await
-            .map_err(DatabaseError::FailedToDeleteTrace)?;
+            .map_err(DatabaseError::DeleteTrace)?;
         Ok(())
     }
 }
