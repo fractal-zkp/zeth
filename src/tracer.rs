@@ -2,22 +2,15 @@ use alloy_rlp::{BufMut, Encodable};
 use compat::Compat;
 use eyre::Result;
 use mpt_trie::builder::PartialTrieBuilder;
-use reth_evm::{ConfigureEvm, ConfigureEvmEnv};
 use reth_exex::ExExContext;
 use reth_node_api::FullNodeComponents;
-use reth_primitives::{
-    Address, Header, Receipt, SealedBlockWithSenders, StorageKey, TransactionSigned, B256,
-};
-use reth_provider::{EvmEnvProvider, StateProvider, StateProviderFactory};
-use reth_revm::{database::StateProviderDatabase, primitives::state::EvmState};
+use reth_primitives::{Receipt, SealedBlockWithSenders, StorageKey, TransactionSigned, B256};
+use reth_provider::{StateProvider, StateProviderFactory};
+use reth_revm::primitives::state::EvmState;
 use reth_trie::StorageMultiProof;
 use revm::{
-    db::{CacheDB, ExecutionTrace},
-    primitives::{
-        env::{BlockEnv, CfgEnvWithHandlerCfg, Env},
-        EnvWithHandlerCfg, ResultAndState, TxEnv, U256,
-    },
-    DatabaseCommit,
+    db::ExecutionTrace,
+    primitives::{Account, Address, U256},
 };
 use std::collections::{HashMap, HashSet};
 use trace_decoder::{
@@ -30,41 +23,29 @@ pub(crate) fn trace_block<Node: FullNodeComponents>(
     block: SealedBlockWithSenders,
     receipts: Vec<Option<Receipt>>,
     trace: ExecutionTrace,
+    tx_traces: Vec<HashMap<Address, Account>>,
 ) -> Result<BlockTrace> {
-    let (cfg, block_env) = configure_evm(ctx, &block.header)?;
-    let mut db = configure_db(ctx, &block);
-
-    let mut transactions = block
-        .into_transactions_ecrecovered()
-        .zip(receipts.into_iter())
-        .peekable();
-
+    let db = configure_db(ctx, &block);
     let mut code_db = HashMap::new();
     let mut txn_infos = vec![];
     let mut cum_gas = 0;
 
-    while let Some((tx, receipt)) = transactions.next() {
-        let tx_env = ctx.evm_config().tx_env(&tx);
+    for ((tx, tx_trace), receipt) in block
+        .into_transactions_ecrecovered()
+        .zip(tx_traces.into_iter())
+        .zip(receipts.into_iter())
+    {
         let receipt = receipt.expect("receipt should be present");
-        let env = create_tx_env(tx_env, &cfg, &block_env);
-        let mut evm = ctx.evm_config().evm_with_env(&mut db, env);
-        let ResultAndState { state, result: _ } = evm.transact()?;
         txn_infos.push(trace_transaction(
             &tx,
             receipt,
-            &state,
+            &tx_trace,
             &mut code_db,
             &mut cum_gas,
         ));
-
-        std::mem::drop(evm);
-
-        if transactions.peek().is_some() {
-            db.commit(state);
-        }
     }
 
-    let trie_pre_images = state_witness(db.db.0, trace.accounts)?;
+    let trie_pre_images = state_witness(db, trace.accounts)?;
 
     Ok(BlockTrace {
         trie_pre_images,
@@ -76,37 +57,9 @@ pub(crate) fn trace_block<Node: FullNodeComponents>(
 fn configure_db<Node: FullNodeComponents>(
     ctx: &mut ExExContext<Node>,
     block: &SealedBlockWithSenders,
-) -> CacheDB<StateProviderDatabase<Box<dyn StateProvider>>> {
+) -> Box<dyn StateProvider> {
     let block_hash = block.parent_hash;
-    let state = ctx.provider().state_by_block_hash(block_hash).unwrap();
-    CacheDB::new(StateProviderDatabase::new(state))
-}
-
-fn configure_evm<Node: FullNodeComponents>(
-    ctx: &mut ExExContext<Node>,
-    header: &Header,
-) -> Result<(CfgEnvWithHandlerCfg, BlockEnv)> {
-    let mut cfg = CfgEnvWithHandlerCfg::new(Default::default(), Default::default());
-    let mut block_env = BlockEnv::default();
-    ctx.provider().fill_env_with_header::<Node::Evm>(
-        &mut cfg,
-        &mut block_env,
-        header,
-        ctx.evm_config().clone(),
-    )?;
-
-    Ok((cfg, block_env))
-}
-
-fn create_tx_env(
-    tx_env: TxEnv,
-    cfg: &CfgEnvWithHandlerCfg,
-    block_env: &BlockEnv,
-) -> EnvWithHandlerCfg {
-    EnvWithHandlerCfg {
-        env: Env::boxed(cfg.cfg_env.clone(), block_env.clone(), tx_env),
-        handler_cfg: cfg.handler_cfg,
-    }
+    ctx.provider().state_by_block_hash(block_hash).unwrap()
 }
 
 fn trace_transaction(
@@ -131,7 +84,7 @@ fn trace_transaction(
     };
 
     let traces = state
-        .into_iter()
+        .iter()
         .map(|(address, state)| {
             let mut storage_read = vec![];
             let mut storage_written: HashMap<primitive_types::H256, _> = HashMap::new();
@@ -159,7 +112,7 @@ fn trace_transaction(
                             code.original_bytes().to_vec(),
                         );
                         match state.is_created() {
-                            true => ContractCodeUsage::Write(code.original_bytes().to_vec().into()),
+                            true => ContractCodeUsage::Write(code.original_bytes().to_vec()),
                             false => ContractCodeUsage::Read(state.info.code_hash.compat()),
                         }
                     }),
