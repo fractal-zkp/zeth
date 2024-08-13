@@ -10818,6 +10818,7 @@ version = "0.1.0"
 dependencies = [
  "alloy-rlp",
  "async-trait",
+ "clap",
  "compat",
  "eyre",
  "futures",
