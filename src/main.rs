@@ -27,16 +27,11 @@ struct Args {
     pub db_path: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, clap::ValueEnum)]
+#[derive(Default, Debug, Clone, PartialEq, Eq, clap::ValueEnum)]
 enum DatabaseType {
+    #[default]
     Sqlite,
     Postgres,
-}
-
-impl Default for DatabaseType {
-    fn default() -> Self {
-        DatabaseType::Sqlite
-    }
 }
 
 fn main() {
