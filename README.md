@@ -7,6 +7,8 @@
 - **Reth-Based Sequencer Node**: Operates as a sequencer node for the Type 1 zkEVM.
 - **Witness Generation**: Supports witness generation for the Type 1 prover.
 - **Backend Support**: Offers both SQLite and PostgreSQL backends for witness data persistence.
+- **Modified Reth**: Leverages a modified fork of [reth](https://github.com/fractal-zkp/reth).
+- **Modified revm**: Leverages a modified fork of [revm](https://github.com/fractal-zkp/revm).
 
 ## Installation
 
