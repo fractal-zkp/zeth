@@ -4,7 +4,9 @@ use eyre::Result;
 use mpt_trie::builder::PartialTrieBuilder;
 use reth_exex::ExExContext;
 use reth_node_api::FullNodeComponents;
-use reth_primitives::{Receipt, SealedBlockWithSenders, StorageKey, TransactionSigned, B256};
+use reth_primitives::{
+    keccak256, Receipt, SealedBlockWithSenders, StorageKey, TransactionSigned, B256,
+};
 use reth_provider::{StateProvider, StateProviderFactory};
 use reth_revm::primitives::state::EvmState;
 use reth_trie::StorageMultiProof;
@@ -71,7 +73,6 @@ fn trace_transaction(
 ) -> TxnInfo {
     let meta = TxnMeta {
         byte_code: tx.envelope_encoded().to_vec(),
-        new_txn_trie_node_byte: tx.envelope_encoded().to_vec(),
         gas_used: {
             let previous_cum_gas = std::mem::replace(cum_gas, receipt.cumulative_gas_used);
             receipt.cumulative_gas_used - previous_cum_gas
@@ -124,6 +125,7 @@ fn trace_transaction(
                 storage_read: Some(storage_read).filter(|x| !x.is_empty()),
                 storage_written: Some(storage_written).filter(|x| !x.is_empty()),
                 code_usage,
+                self_destructed: Some(state.is_selfdestructed()).filter(|x| *x),
             };
 
             ((*address).compat(), trace)
@@ -142,6 +144,7 @@ fn state_witness(
         .into_iter()
         .map(|(k, v)| (k, v.into_iter().map(Into::into).collect()))
         .collect();
+    let state_access_accts = state_access.keys().cloned().collect::<Vec<_>>();
     let state_witness = state.multiproof(Default::default(), state_access)?;
 
     // build the account trie witness
@@ -156,7 +159,7 @@ fn state_witness(
     );
 
     // build the storage trie witnesses
-    let storage_witnesses = state_witness
+    let mut storage_witnesses: HashMap<primitive_types::H256, SeparateTriePreImage> = state_witness
         .storages
         .into_iter()
         .map(|(hashed_addr, StorageMultiProof { root, subtree })| {
@@ -169,6 +172,13 @@ fn state_witness(
             )
         })
         .collect();
+
+    for addr in state_access_accts {
+        let hashed_addr = keccak256(addr);
+        storage_witnesses
+            .entry(hashed_addr.compat())
+            .or_insert(SeparateTriePreImage::Direct(Default::default()));
+    }
 
     Ok(BlockTraceTriePreImages::Separate(SeparateTriePreImages {
         state: SeparateTriePreImage::Direct(state_trie_builder.build()),
