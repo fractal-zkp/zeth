@@ -39,6 +39,17 @@ Once the project is built, you can run a development node with the following com
 
 This command runs a development node with a maximum of one transaction per block.
 
+Note:
+If you receive the following error - `Error: Failed to open database connection: error returned from database: (code: 14) unable to open database file` then you must create the default sqlite database file by running `touch polygon-zero.db`.
+
+Submit transactions to the rpc hosted at `http://127.0.0.1:8545` with chain id `1337` 
+using one of the test accounts associated with the test seed:
+```
+test test test test test test test test test test test junk
+```
+
+Prove the blocks using `zero-bin`, see the [README](https://github.com/fractal-zkp/zk_evm/blob/develop/zero_bin/README.md).
+
 ## Contributing
 
 Contributions are welcome! Please fork the repository and create a pull request with your changes. Make sure to follow the established coding standards and include relevant tests.
